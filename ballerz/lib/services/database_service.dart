@@ -21,34 +21,40 @@ class DatabaseService {
       final path = join(await getDatabasesPath(), 'football_app.db');
       return openDatabase(
         path,
-        version: 1,
+        version: 2,
         onCreate: (db, version) async {
           await db.execute('''
-          CREATE TABLE players (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            position TEXT NOT NULL,
-            pace INTEGER NOT NULL,
-            shooting INTEGER NOT NULL,
-            passing INTEGER NOT NULL,
-            dribbling INTEGER NOT NULL,
-            defending INTEGER NOT NULL,
-            physical INTEGER NOT NULL
-          )
-        ''');
+            CREATE TABLE players (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              position TEXT NOT NULL,
+              pace INTEGER NOT NULL,
+              shooting INTEGER NOT NULL,
+              passing INTEGER NOT NULL,
+              dribbling INTEGER NOT NULL,
+              defending INTEGER NOT NULL,
+              physical INTEGER NOT NULL,
+              photoPath TEXT
+            )
+          ''');
           await db.execute('''
-          CREATE TABLE games (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            team1Players TEXT NOT NULL,
-            team2Players TEXT NOT NULL,
-            team1Score INTEGER,
-            team2Score INTEGER,
-            winnerTeam INTEGER,
-            playerOfGameId INTEGER,
-            date TEXT NOT NULL,
-            isCompleted INTEGER NOT NULL DEFAULT 0
-          )
-        ''');
+            CREATE TABLE games (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              team1Players TEXT NOT NULL,
+              team2Players TEXT NOT NULL,
+              team1Score INTEGER,
+              team2Score INTEGER,
+              winnerTeam INTEGER,
+              playerOfGameId INTEGER,
+              date TEXT NOT NULL,
+              isCompleted INTEGER NOT NULL DEFAULT 0
+            )
+          ''');
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          if (oldVersion < 2) {
+            await db.execute('ALTER TABLE players ADD COLUMN photoPath TEXT');
+          }
         },
       );
     } catch (e) {

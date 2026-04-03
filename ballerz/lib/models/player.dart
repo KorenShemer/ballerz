@@ -2,12 +2,8 @@ class Player {
   final int? id;
   final String name;
   final String position;
-  final int pace;
-  final int shooting;
-  final int passing;
-  final int dribbling;
-  final int defending;
-  final int physical;
+  final int pace, shooting, passing, dribbling, defending, physical;
+  final String? photoPath;
 
   Player({
     this.id,
@@ -19,6 +15,7 @@ class Player {
     required this.dribbling,
     required this.defending,
     required this.physical,
+    this.photoPath,
   });
 
   int get overall =>
@@ -35,40 +32,19 @@ class Player {
         'dribbling': dribbling,
         'defending': defending,
         'physical': physical,
+        'photoPath': photoPath,
       };
 
-  factory Player.fromMap(Map<String, dynamic> map) => Player(
-        id: map['id'],
-        name: map['name'],
-        position: map['position'],
-        pace: map['pace'],
-        shooting: map['shooting'],
-        passing: map['passing'],
-        dribbling: map['dribbling'],
-        defending: map['defending'],
-        physical: map['physical'],
-      );
-
-  Player copyWith({
-    int? id,
-    String? name,
-    String? position,
-    int? pace,
-    int? shooting,
-    int? passing,
-    int? dribbling,
-    int? defending,
-    int? physical,
-  }) =>
-      Player(
-        id: id ?? this.id,
-        name: name ?? this.name,
-        position: position ?? this.position,
-        pace: pace ?? this.pace,
-        shooting: shooting ?? this.shooting,
-        passing: passing ?? this.passing,
-        dribbling: dribbling ?? this.dribbling,
-        defending: defending ?? this.defending,
-        physical: physical ?? this.physical,
+  factory Player.fromMap(Map<String, dynamic> m) => Player(
+        id: m['id'],
+        name: m['name'],
+        position: m['position'],
+        pace: m['pace'],
+        shooting: m['shooting'],
+        passing: m['passing'],
+        dribbling: m['dribbling'],
+        defending: m['defending'],
+        physical: m['physical'],
+        photoPath: m['photoPath'],
       );
 }

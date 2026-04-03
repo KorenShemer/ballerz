@@ -1,18 +1,21 @@
 name: ballerz
 description: Football Team Maker App
-publish_to: 'none'
+publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
+
   sqflite: ^2.3.0
   sqflite_common_ffi: ^2.3.0
   path: ^1.9.0
   cupertino_icons: ^1.0.2
+  image_picker: ^1.1.2
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
@@ -21,3 +24,30 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/cards/gold_card.png
+    - assets/cards/silver_card.png
+    - assets/cards/bronze_card.png
+    - assets/cards/totw_card.png
+  fonts:
+    - family: dinProC
+      fonts:
+        - asset: assets/fonts/din-pro-condensed.ttf
+    - family: EABold
+      fonts:
+        - asset: assets/fonts/EABold.ttf
+    - family: EABoldJP
+      fonts:
+        - asset: assets/fonts/EABoldJP.ttf
+    - family: EABoldSC
+      fonts:
+        - asset: assets/fonts/EABoldSC.ttf
+    - family: EACondBold
+      fonts:
+        - asset: assets/fonts/EACondBold.ttf
+    - family: EACondMedium
+      fonts:
+        - asset: assets/fonts/EACondMedium.ttf
+    - family: EACondMediumSC
+      fonts:
+        - asset: assets/fonts/EACondMediumSC.ttf
