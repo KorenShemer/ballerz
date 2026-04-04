@@ -1,8 +1,10 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/player.dart';
 import '../models/game.dart';
 import '../services/database_service.dart';
 import '../services/team_builder.dart';
+import '../theme/app_colors.dart';
 
 class TeamsGamesScreen extends StatefulWidget {
   const TeamsGamesScreen({super.key});
@@ -11,22 +13,40 @@ class TeamsGamesScreen extends StatefulWidget {
   State<TeamsGamesScreen> createState() => _TeamsGamesScreenState();
 }
 
-class _TeamsGamesScreenState extends State<TeamsGamesScreen> {
+class _TeamsGamesScreenState extends State<TeamsGamesScreen>
+    with SingleTickerProviderStateMixin {
   final _db = DatabaseService();
+  final _scrollController = ScrollController();
 
-  // Players
   List<Player> _allPlayers = [];
   final Set<int> _selectedIds = {};
   List<List<Player>>? _teams;
 
-  // Games
   List<Game> _games = [];
   Map<int, Player> _playerMap = {};
+
+  late AnimationController _teamsAnimController;
+  late Animation<double> _teamsAnim;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _teamsAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    _teamsAnim = CurvedAnimation(
+      parent: _teamsAnimController,
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _teamsAnimController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -43,12 +63,11 @@ class _TeamsGamesScreenState extends State<TeamsGamesScreen> {
     final selected =
         _allPlayers.where((p) => _selectedIds.contains(p.id)).toList();
     if (selected.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select at least 2 players')),
-      );
+      _showSnack('Select at least 2 players', isError: true);
       return;
     }
     setState(() => _teams = TeamBuilder.buildTeams(selected));
+    _teamsAnimController.forward(from: 0);
   }
 
   Future<void> _saveGame() async {
@@ -66,12 +85,19 @@ class _TeamsGamesScreenState extends State<TeamsGamesScreen> {
       _teams = null;
       _selectedIds.clear();
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Game saved! Enter the result below.'),
-        backgroundColor: Colors.green,
-      ),
-    );
+    _teamsAnimController.reset();
+    _showSnack('Game saved! Enter the result below.', isError: false);
+  }
+
+  void _showSnack(String msg, {required bool isError}) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+      backgroundColor: isError ? AppColors.danger : AppColors.primary,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+    ));
   }
 
   List<Player> _teamPlayers(List<int> ids) =>
@@ -97,71 +123,167 @@ class _TeamsGamesScreenState extends State<TeamsGamesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.bg,
       body: SafeArea(
         child: _teams != null ? _buildTeamsView() : _buildMainView(),
       ),
     );
   }
 
-  // ─── Main View (player selection + games list) ───────────────────────────
+  // ─── Main View ────────────────────────────────────────────────────────────
 
   Widget _buildMainView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Header
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Teams & Games',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800)),
-              if (_selectedIds.isNotEmpty)
-                Text('${_selectedIds.length} selected',
-                    style:
-                        const TextStyle(color: Colors.white54, fontSize: 13)),
-            ],
+    return CustomScrollView(
+      controller: _scrollController,
+      physics: const BouncingScrollPhysics(),
+      slivers: [
+        // Frosted top bar
+        SliverAppBar(
+          pinned: true,
+          floating: false,
+          automaticallyImplyLeading: false,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          toolbarHeight: 56,
+          titleSpacing: 0,
+          flexibleSpace: ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                color: const Color(0xFF121B22).withOpacity(0.82),
+              ),
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        // Player selection section
-        if (_allPlayers.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+          title: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                const Text("Today's players",
-                    style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => setState(() {
-                    if (_selectedIds.length == _allPlayers.length) {
-                      _selectedIds.clear();
-                    } else {
-                      _selectedIds.addAll(_allPlayers.map((p) => p.id!));
-                    }
-                  }),
-                  child: Text(
-                    _selectedIds.length == _allPlayers.length
-                        ? 'Deselect all'
-                        : 'Select all',
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                const Text(
+                  'Teams & Games',
+                  style: TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
                   ),
                 ),
+                const Spacer(),
+                if (_selectedIds.isNotEmpty)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${_selectedIds.length} selected',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
+        ),
+
+        // Player selection area
+        if (_allPlayers.isNotEmpty)
+          SliverToBoxAdapter(child: _buildSelectionSection()),
+
+        // Games header
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 12),
+            child: Row(children: [
+              const Text(
+                'Games',
+                style: TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${_games.length}',
+                  style: const TextStyle(
+                      color: AppColors.textSub, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ]),
+          ),
+        ),
+
+        // Games list or empty state
+        _games.isEmpty
+            ? SliverFillRemaining(child: _buildEmptyGames())
+            : SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (_, i) => _buildGameCard(_games[i]),
+                    childCount: _games.length,
+                  ),
+                ),
+              ),
+      ],
+    );
+  }
+
+  Widget _buildSelectionSection() {
+    final allSelected = _selectedIds.length == _allPlayers.length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section label + select all
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+            child: Row(children: [
+              const Text(
+                "Today's Players",
+                style: TextStyle(
+                  color: AppColors.textSub,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => setState(() {
+                  allSelected
+                      ? _selectedIds.clear()
+                      : _selectedIds.addAll(_allPlayers.map((p) => p.id!));
+                }),
+                child: Text(
+                  allSelected ? 'Deselect All' : 'Select All',
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ]),
+          ),
+
+          // Player chips
           SizedBox(
-            height: 50,
+            height: 52,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -169,109 +291,126 @@ class _TeamsGamesScreenState extends State<TeamsGamesScreen> {
               itemBuilder: (_, i) => _buildPlayerChip(_allPlayers[i]),
             ),
           ),
-          const SizedBox(height: 12),
+
+          const SizedBox(height: 16),
+
           // Make teams button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _selectedIds.length >= 2 ? _generateTeams : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.white12,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Text(
-                  _selectedIds.isEmpty
-                      ? 'Select players to make teams'
-                      : 'Make Teams (${_selectedIds.length} players)',
-                  style: TextStyle(
-                      color: _selectedIds.length >= 2
-                          ? Colors.black
-                          : Colors.white38,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15),
-                ),
-              ),
-            ),
+            child: _buildMakeTeamsButton(),
           ),
         ],
-        const SizedBox(height: 20),
-        // Games header
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              const Text('Games',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(width: 8),
-              Text('${_games.length}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 14)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        // Games list
-        Expanded(
-          child: _games.isEmpty
-              ? _buildEmptyGames()
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                  itemCount: _games.length,
-                  itemBuilder: (_, i) => _buildGameCard(_games[i]),
-                ),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildPlayerChip(Player player) {
     final selected = _selectedIds.contains(player.id);
+    final ovr = player.overall;
+    final color = ovr >= 80
+        ? const Color(0xFFE8A800)
+        : ovr >= 70
+            ? const Color(0xFFAAB7BC)
+            : const Color(0xFFCD7F32);
+
     return GestureDetector(
       onTap: () => setState(() {
-        if (selected) {
-          _selectedIds.remove(player.id);
-        } else {
-          _selectedIds.add(player.id!);
-        }
+        selected ? _selectedIds.remove(player.id) : _selectedIds.add(player.id!);
       }),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
         margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.only(left: 12, right: 14, top: 8, bottom: 8),
         decoration: BoxDecoration(
-          color: selected ? Colors.white : const Color(0xFF1C1C1E),
-          borderRadius: BorderRadius.circular(25),
+          color: selected ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(26),
           border: Border.all(
-            color: selected ? Colors.white : Colors.white12,
-            width: 1,
+            color: selected ? AppColors.primary : AppColors.divider,
+            width: 1.2,
           ),
+          boxShadow: selected
+              ? [BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4))]
+              : [],
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              player.name,
-              style: TextStyle(
-                  color: selected ? Colors.black : Colors.white70,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          // OVR badge
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: selected ? Colors.white.withOpacity(0.2) : color.withOpacity(0.15),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(width: 6),
-            Text(
-              '${player.overall}',
-              style: TextStyle(
-                  color: selected ? Colors.black54 : Colors.white38,
-                  fontSize: 11),
+            child: Center(
+              child: Text(
+                '${player.overall}',
+                style: TextStyle(
+                  color: selected ? Colors.white : color,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ),
-          ],
+          ),
+          const SizedBox(width: 8),
+          Text(
+            player.name,
+            style: TextStyle(
+              color: selected ? Colors.white : AppColors.textMain,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildMakeTeamsButton() {
+    final count = _selectedIds.length;
+    final ready = count >= 2;
+    return GestureDetector(
+      onTap: ready ? _generateTeams : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        decoration: BoxDecoration(
+          gradient: ready
+              ? LinearGradient(
+                  colors: [AppColors.primary, const Color(0xFF1EAD53)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: ready ? null : AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: ready
+              ? [BoxShadow(color: AppColors.primary.withOpacity(0.35), blurRadius: 16, offset: const Offset(0, 6))]
+              : [],
         ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(
+            Icons.shuffle_rounded,
+            size: 18,
+            color: ready ? Colors.white : AppColors.textSub,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            count == 0
+                ? 'Select players to build teams'
+                : count == 1
+                    ? 'Select at least 2 players'
+                    : 'Build Teams  ·  $count players',
+            style: TextStyle(
+              color: ready ? Colors.white : AppColors.textSub,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+              letterSpacing: -0.2,
+            ),
+          ),
+        ]),
       ),
     );
   }
@@ -289,149 +428,171 @@ class _TeamsGamesScreenState extends State<TeamsGamesScreen> {
     return GestureDetector(
       onTap: () => _openResultDialog(game),
       child: Container(
-        height: 130,
+        height: 138,
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: const Color(0xFF0a0a0a),
+          borderRadius: BorderRadius.circular(18),
+          color: AppColors.card,
         ),
         clipBehavior: Clip.hardEdge,
-        child: Stack(
-          children: [
-            // Football field background
-            _buildFieldBackground(),
-            // Bottom info bar
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius:
-                      BorderRadius.vertical(bottom: Radius.circular(16)),
+        child: Stack(children: [
+          // Football field background
+          Positioned.fill(child: CustomPaint(painter: _FieldPainter())),
+
+          // Top overlay badges
+          Positioned(
+            top: 10,
+            left: 12,
+            right: 12,
+            child: Row(children: [
+              if (!game.isCompleted)
+                _badge(
+                  label: 'Tap to enter result',
+                  bgColor: const Color(0xFFFFD60A),
+                  textColor: Colors.black,
+                )
+              else
+                _badge(
+                  label: '⚽  Final',
+                  bgColor: AppColors.surface.withOpacity(0.9),
+                  textColor: AppColors.textSub,
                 ),
-                child: Row(
-                  children: [
-                    // Game name / score
-                    Expanded(
-                      child: Text(
-                        game.isCompleted
-                            ? '${game.team1Score} - ${game.team2Score}'
-                            : _gameTitle(team1, team2),
-                        style: const TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16),
-                      ),
+              const Spacer(),
+              if (potg != null)
+                _badge(
+                  label: '⭐  ${potg.name}',
+                  bgColor: const Color(0xFFE8C96D).withOpacity(0.95),
+                  textColor: const Color(0xFF3A2A00),
+                ),
+            ]),
+          ),
+
+          // Bottom info bar
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 11),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0d1f18).withOpacity(0.88),
+                    border: const Border(
+                      top: BorderSide(color: Colors.white10, width: 0.5),
                     ),
-                    if (game.isCompleted)
-                      Container(
-                        margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black12,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text('Game Ended',
+                  ),
+                  child: Row(children: [
+                    // Score or team names
+                    if (game.isCompleted) ...[
+                      _scoreChip('Team 1', game.team1Score ?? 0,
+                          winner: (game.team1Score ?? 0) > (game.team2Score ?? 0)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('vs',
                             style: TextStyle(
-                                color: Colors.black54,
+                                color: AppColors.textSub.withOpacity(0.5),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600)),
                       ),
-                    Text(timeStr,
-                        style: const TextStyle(
-                            color: Colors.black38, fontSize: 12)),
-                    const SizedBox(width: 8),
-                    Text(dateStr,
-                        style: const TextStyle(
-                            color: Colors.black38, fontSize: 12)),
-                  ],
+                      _scoreChip('Team 2', game.team2Score ?? 0,
+                          winner: (game.team2Score ?? 0) > (game.team1Score ?? 0)),
+                    ] else ...[
+                      Expanded(
+                        child: Text(
+                          _gameTitle(team1, team2),
+                          style: const TextStyle(
+                            color: AppColors.textMain,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                      Text(timeStr,
+                          style: const TextStyle(
+                              color: AppColors.textSub, fontSize: 11, fontWeight: FontWeight.w500)),
+                      Text(dateStr,
+                          style: TextStyle(
+                              color: AppColors.textSub.withOpacity(0.6),
+                              fontSize: 10)),
+                    ]),
+                  ]),
                 ),
               ),
             ),
-            // POTM badge
-            if (potg != null)
-              Positioned(
-                top: 10,
-                right: 12,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text('⭐ POTM',
-                          style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800)),
-                      Text(potg.name,
-                          style: const TextStyle(
-                              color: Colors.black54, fontSize: 10)),
-                    ],
-                  ),
-                ),
-              ),
-            // Pending badge
-            if (!game.isCompleted)
-              Positioned(
-                top: 10,
-                left: 12,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text('Tap to enter result',
-                      style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold)),
-                ),
-              ),
-          ],
-        ),
+          ),
+        ]),
       ),
     );
+  }
+
+  Widget _badge({required String label, required Color bgColor, required Color textColor}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: textColor, fontSize: 10, fontWeight: FontWeight.w800)),
+    );
+  }
+
+  Widget _scoreChip(String label, int score, {required bool winner}) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      Text(label,
+          style: const TextStyle(color: AppColors.textSub, fontSize: 9, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 1),
+      Text(
+        '$score',
+        style: TextStyle(
+          color: winner ? AppColors.primary : AppColors.textMain,
+          fontSize: 22,
+          fontWeight: FontWeight.w900,
+          height: 1,
+        ),
+      ),
+    ]);
   }
 
   String _gameTitle(List<Player> t1, List<Player> t2) {
     if (t1.isEmpty && t2.isEmpty) return 'Game';
-    return 'Team 1 vs Team 2';
-  }
-
-  Widget _buildFieldBackground() {
-    return Positioned.fill(
-      child: CustomPaint(painter: _FieldPainter()),
-    );
+    final n1 = t1.isNotEmpty ? t1.first.name.split(' ').first : 'Team 1';
+    final n2 = t2.isNotEmpty ? t2.first.name.split(' ').first : 'Team 2';
+    return '$n1\'s team  vs  $n2\'s team';
   }
 
   Widget _buildEmptyGames() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.sports_soccer, size: 50, color: Colors.white12),
-          SizedBox(height: 10),
-          Text('No games yet',
-              style: TextStyle(color: Colors.white38, fontSize: 15)),
-          SizedBox(height: 4),
-          Text('Make teams and press GAME!',
-              style: TextStyle(color: Colors.white24, fontSize: 12)),
-        ],
-      ),
+    return Center(
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Container(
+          width: 90,
+          height: 90,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.primary.withOpacity(0.08),
+          ),
+          child: const Icon(Icons.sports_soccer_rounded, size: 40, color: AppColors.primary),
+        ),
+        const SizedBox(height: 20),
+        const Text('No games yet',
+            style: TextStyle(
+                color: AppColors.textMain,
+                fontSize: 18,
+                fontWeight: FontWeight.bold)),
+        const SizedBox(height: 6),
+        const Text('Build teams and kick off your first game',
+            style: TextStyle(color: AppColors.textSub, fontSize: 13)),
+      ]),
     );
   }
 
-  // ─── Teams View ──────────────────────────────────────────────────────────
+  // ─── Teams View ────────────────────────────────────────────────────────────
 
   Widget _buildTeamsView() {
     final team1 = _teams![0];
@@ -439,229 +600,379 @@ class _TeamsGamesScreenState extends State<TeamsGamesScreen> {
     final avg1 = TeamBuilder.teamAverage(team1);
     final avg2 = TeamBuilder.teamAverage(team2);
 
-    return Column(
-      children: [
-        // Header
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Row(
-            children: [
-              GestureDetector(
-                onTap: () => setState(() => _teams = null),
-                child: const Icon(Icons.arrow_back_ios,
-                    color: Colors.white, size: 20),
-              ),
-              const SizedBox(width: 8),
-              const Text('Teams Ready',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        // Balance bar
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _buildBalanceBar(avg1, avg2),
-        ),
-        const SizedBox(height: 16),
-        // Teams
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                    child: _buildTeamCol(
-                        'Team 1', team1, avg1, const Color(0xFF1565C0))),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: _buildTeamCol(
-                        'Team 2', team2, avg2, const Color(0xFFB71C1C))),
-              ],
-            ),
-          ),
-        ),
-        // GAME! button
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _saveGame,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              child: const Text(
-                '⚽  GAME!',
-                style: TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18),
+    return FadeTransition(
+      opacity: _teamsAnim,
+      child: SlideTransition(
+        position: Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+            .animate(_teamsAnim),
+        child: Column(children: [
+          // Header bar
+          ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                color: const Color(0xFF121B22).withOpacity(0.82),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+                child: Row(children: [
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _teams = null;
+                      _teamsAnimController.reset();
+                    }),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                          color: AppColors.surface, shape: BoxShape.circle),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded,
+                          color: AppColors.textMain, size: 16),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Teams Ready',
+                        style: TextStyle(
+                            color: AppColors.textMain,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3)),
+                    Text('${team1.length + team2.length} players',
+                        style: const TextStyle(
+                            color: AppColors.textSub, fontSize: 12)),
+                  ]),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: _generateTeams,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(children: const [
+                        Icon(Icons.shuffle_rounded, color: AppColors.textSub, size: 14),
+                        SizedBox(width: 5),
+                        Text('Reshuffle',
+                            style: TextStyle(
+                                color: AppColors.textSub,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600)),
+                      ]),
+                    ),
+                  ),
+                ]),
               ),
             ),
           ),
-        ),
-      ],
+
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+              child: Column(children: [
+                // Balance bar
+                _buildBalanceBar(avg1, avg2),
+                const SizedBox(height: 20),
+                // Team columns
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                          child: _buildTeamCol(
+                              'Team 1', team1, avg1, AppColors.primary,
+                              isLeft: true)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: _buildTeamCol(
+                              'Team 2', team2, avg2, const Color(0xFFFF453A),
+                              isLeft: false)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 120),
+              ]),
+            ),
+          ),
+
+          // GAME! button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: GestureDetector(
+              onTap: _saveGame,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 17),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, Color(0xFF1EAD53)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.4),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('⚽', style: TextStyle(fontSize: 18)),
+                    SizedBox(width: 10),
+                    Text('START GAME',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            letterSpacing: 1.2)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 
   Widget _buildBalanceBar(int avg1, int avg2) {
     final total = avg1 + avg2;
     final ratio = total == 0 ? 0.5 : avg1 / total;
+    final diff = (avg1 - avg2).abs();
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.circular(12),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider, width: 0.8),
       ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Text('Team 1  $avg1',
-                  style:
-                      const TextStyle(color: Color(0xFF64B5F6), fontSize: 12)),
-              const Spacer(),
-              Text('$avg2  Team 2',
-                  style:
-                      const TextStyle(color: Color(0xFFEF9A9A), fontSize: 12)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: ratio,
-              backgroundColor: const Color(0xFFEF5350),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFF42A5F5)),
-              minHeight: 6,
+      child: Column(children: [
+        Row(children: [
+          _avgBadge('T1', avg1, AppColors.primary),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: diff <= 2
+                  ? AppColors.primary.withOpacity(0.12)
+                  : AppColors.surface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              diff == 0 ? '⚖️  Balanced' : '±$diff OVR',
+              style: TextStyle(
+                color: diff <= 2 ? AppColors.primary : AppColors.textSub,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Difference: ${(avg1 - avg2).abs()} OVR',
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
-          ),
-        ],
-      ),
+          const Spacer(),
+          _avgBadge('T2', avg2, const Color(0xFFFF453A)),
+        ]),
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Stack(children: [
+            Container(
+              height: 8,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF453A).withOpacity(0.6),
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+            FractionallySizedBox(
+              widthFactor: ratio,
+              child: Container(
+                height: 8,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                      colors: [AppColors.primary, Color(0xFF1EAD53)]),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ]),
     );
   }
 
-  Widget _buildTeamCol(String title, List<Player> team, int avg, Color color) {
-    return Column(
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: color.withOpacity(0.3)),
-          ),
-          child: Column(
-            children: [
-              Text(title,
-                  style: TextStyle(
-                      color: color, fontWeight: FontWeight.w800, fontSize: 14)),
-              Text('AVG $avg',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
-            ],
-          ),
+  Widget _avgBadge(String label, int avg, Color color) {
+    return Row(children: [
+      Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 6),
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label,
+            style: const TextStyle(
+                color: AppColors.textSub, fontSize: 9, fontWeight: FontWeight.w700)),
+        Text('$avg OVR',
+            style: TextStyle(
+                color: color, fontSize: 14, fontWeight: FontWeight.w900)),
+      ]),
+    ]);
+  }
+
+  Widget _buildTeamCol(
+      String title, List<Player> team, int avg, Color color,
+      {required bool isLeft}) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // Team header
+      Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withOpacity(0.25), width: 1),
         ),
-        const SizedBox(height: 8),
-        ...team.map((p) => Container(
-              height: 44,
-              margin: const EdgeInsets.only(bottom: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1C1C1E),
-                borderRadius: BorderRadius.circular(10),
+        child: Row(children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Text(title,
+              style: TextStyle(
+                  color: color, fontWeight: FontWeight.w800, fontSize: 14)),
+          const Spacer(),
+          Text('AVG $avg',
+              style: const TextStyle(
+                  color: AppColors.textSub, fontSize: 10, fontWeight: FontWeight.w600)),
+        ]),
+      ),
+      const SizedBox(height: 8),
+      // Players
+      ...team.asMap().entries.map((e) {
+        final i = e.key;
+        final p = e.value;
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: Duration(milliseconds: 280 + i * 60),
+          curve: Curves.easeOutCubic,
+          builder: (_, v, child) => Opacity(
+            opacity: v,
+            child: Transform.translate(
+                offset: Offset(0, 12 * (1 - v)), child: child),
+          ),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.divider, width: 0.5),
+            ),
+            child: Row(children: [
+              Expanded(
+                child: Text(p.name,
+                    style: const TextStyle(
+                        color: AppColors.textMain,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis),
               ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(p.name,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                    Text('${p.overall}',
-                        style: const TextStyle(
-                            color: Colors.white54, fontSize: 12)),
-                  ],
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _ovrColor(p.overall).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${p.overall}',
+                  style: TextStyle(
+                      color: _ovrColor(p.overall),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800),
                 ),
               ),
-            )),
-      ],
-    );
+            ]),
+          ),
+        );
+      }),
+    ]);
+  }
+
+  Color _ovrColor(int ovr) {
+    if (ovr >= 80) return const Color(0xFFE8A800);
+    if (ovr >= 70) return const Color(0xFFAAB7BC);
+    return const Color(0xFFCD7F32);
   }
 }
 
-// ─── Field painter ───────────────────────────────────────────────────────────
+// ─── Field Painter ────────────────────────────────────────────────────────────
 
 class _FieldPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint();
 
-    // Field green gradient
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+    // Field gradient
     paint.shader = const LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
       colors: [Color(0xFF1a4a2a), Color(0xFF0d2a16)],
-    ).createShader(rect);
-    canvas.drawRect(rect, paint);
-
-    // Stripes
+    ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
     paint.shader = null;
-    paint.color = Colors.white.withOpacity(0.03);
-    for (int i = 0; i < 6; i++) {
+
+    // Subtle stripe bands
+    paint.color = Colors.white.withOpacity(0.025);
+    paint.style = PaintingStyle.fill;
+    for (int i = 0; i < 8; i++) {
       if (i % 2 == 0) {
         canvas.drawRect(
-            Rect.fromLTWH(i * size.width / 6, 0, size.width / 6, size.height),
+            Rect.fromLTWH(i * size.width / 8, 0, size.width / 8, size.height),
             paint);
       }
     }
 
     // Field lines
-    paint.color = Colors.white.withOpacity(0.15);
     paint.style = PaintingStyle.stroke;
-    paint.strokeWidth = 1.2;
+    paint.strokeWidth = 1.0;
+    paint.color = Colors.white.withOpacity(0.18);
 
-    // Center circle
-    canvas.drawCircle(Offset(size.width / 2, size.height / 2), 28, paint);
+    // Outer border
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(6, 6, size.width - 12, size.height - 12),
+            const Radius.circular(2)),
+        paint);
 
     // Center line
     canvas.drawLine(
-        Offset(size.width / 2, 0), Offset(size.width / 2, size.height), paint);
+        Offset(size.width / 2, 6), Offset(size.width / 2, size.height - 6), paint);
 
-    // Left goal box
-    canvas.drawRect(
-        Rect.fromLTWH(
-            0, size.height * 0.25, size.width * 0.18, size.height * 0.5),
-        paint);
+    // Center circle
+    paint.color = Colors.white.withOpacity(0.14);
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), 22, paint);
 
-    // Right goal box
-    canvas.drawRect(
-        Rect.fromLTWH(size.width * 0.82, size.height * 0.25, size.width * 0.18,
-            size.height * 0.5),
-        paint);
-
-    // Outer border
+    // Center dot
+    paint.style = PaintingStyle.fill;
     paint.color = Colors.white.withOpacity(0.2);
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), 2.5, paint);
+    paint.style = PaintingStyle.stroke;
+
+    // Left penalty box
+    paint.color = Colors.white.withOpacity(0.15);
     canvas.drawRect(
-        Rect.fromLTWH(4, 4, size.width - 8, size.height - 8), paint);
+        Rect.fromLTWH(6, size.height * 0.22, size.width * 0.2, size.height * 0.56),
+        paint);
+
+    // Right penalty box
+    canvas.drawRect(
+        Rect.fromLTWH(size.width * 0.8, size.height * 0.22,
+            size.width * 0.2 - 6, size.height * 0.56),
+        paint);
   }
 
   @override
@@ -698,12 +1009,10 @@ class _GameResultSheetState extends State<GameResultSheet> {
     super.initState();
     _score1 = widget.game.team1Score ?? 0;
     _score2 = widget.game.team2Score ?? 0;
-
     final allIds = {
       ...widget.team1Players.map((p) => p.id),
       ...widget.team2Players.map((p) => p.id),
     };
-    // Only keep potgId if it actually exists in the player lists
     _potgId = allIds.contains(widget.game.playerOfGameId)
         ? widget.game.playerOfGameId
         : null;
@@ -737,142 +1046,197 @@ class _GameResultSheetState extends State<GameResultSheet> {
 
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        top: 8,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 28,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-                color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // Drag handle
+        Container(
+          width: 36,
+          height: 4,
+          margin: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+              color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+        ),
+
+        const Text('Enter Result',
+            style: TextStyle(
+                color: AppColors.textMain,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3)),
+        const SizedBox(height: 28),
+
+        // Score row
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.divider, width: 0.8),
           ),
-          const Text('Enter Result',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold)),
-          const SizedBox(height: 24),
-          // Score
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _scoreBox('Team 1', _score1, (v) => setState(() => _score1 = v)),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Text('—',
-                    style: TextStyle(
-                        color: Colors.white38,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w300)),
-              ),
-              _scoreBox('Team 2', _score2, (v) => setState(() => _score2 = v)),
+              _scoreBox('Team 1', _score1, (v) => setState(() => _score1 = v),
+                  AppColors.primary),
+              Column(children: [
+                Text(
+                  '$_score1 — $_score2',
+                  style: const TextStyle(
+                      color: AppColors.textSub,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _score1 == _score2
+                      ? 'Draw'
+                      : _score1 > _score2
+                          ? 'Team 1 leads'
+                          : 'Team 2 leads',
+                  style: const TextStyle(color: AppColors.textSub, fontSize: 10),
+                ),
+              ]),
+              _scoreBox('Team 2', _score2, (v) => setState(() => _score2 = v),
+                  const Color(0xFFFF453A)),
             ],
           ),
-          const SizedBox(height: 24),
-          // POTG
-          const Align(
-            alignment: Alignment.centerLeft,
+        ),
+
+        const SizedBox(height: 20),
+
+        // POTG
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
             child: Text('⭐  Player of the Game',
                 style: TextStyle(
-                    color: Colors.white70, fontWeight: FontWeight.bold)),
+                    color: AppColors.textSub,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13)),
           ),
-          const SizedBox(height: 8),
           DropdownButtonFormField<int?>(
             value: _potgId,
-            dropdownColor: const Color(0xFF2C2C2E),
-            style: const TextStyle(color: Colors.white),
+            dropdownColor: AppColors.card,
+            style: const TextStyle(color: AppColors.textMain),
             decoration: InputDecoration(
               filled: true,
-              fillColor: Colors.white10,
+              fillColor: AppColors.card,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide.none,
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.divider, width: 0.8),
               ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.divider, width: 0.8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.primary, width: 1),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             ),
             items: [
-              const DropdownMenuItem(value: null, child: Text('— None —')),
-              ...all.map(
-                  (p) => DropdownMenuItem(value: p.id, child: Text(p.name))),
+              const DropdownMenuItem(
+                  value: null,
+                  child: Text('— None —',
+                      style: TextStyle(color: AppColors.textSub))),
+              ...all.map((p) => DropdownMenuItem(
+                  value: p.id,
+                  child: Text(p.name,
+                      style: const TextStyle(color: AppColors.textMain)))),
             ],
             onChanged: (v) => setState(() => _potgId = v),
           ),
-          const SizedBox(height: 20),
-          SizedBox(
+        ]),
+
+        const SizedBox(height: 24),
+
+        // Save button
+        GestureDetector(
+          onTap: _save,
+          child: Container(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.primary, Color(0xFF1EAD53)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              child: const Text('Save Result',
-                  style: TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16)),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.35),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
             ),
+            child: const Text('Save Result',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16)),
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 
-  Widget _scoreBox(String label, int value, void Function(int) onChange) {
-    return Column(
-      children: [
-        Text(label,
-            style: const TextStyle(color: Colors.white54, fontSize: 12)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            GestureDetector(
-              onTap: value > 0 ? () => onChange(value - 1) : null,
-              child: Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: Colors.white12,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child:
-                    const Icon(Icons.remove, color: Colors.white70, size: 16),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: Text('$value',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.w900)),
-            ),
-            GestureDetector(
-              onTap: () => onChange(value + 1),
-              child: Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: Colors.white12,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.add, color: Colors.white70, size: 16),
-              ),
-            ),
-          ],
+  Widget _scoreBox(
+      String label, int value, void Function(int) onChange, Color color) {
+    return Column(children: [
+      Text(label,
+          style: const TextStyle(
+              color: AppColors.textSub, fontSize: 11, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 10),
+      Row(children: [
+        _stepBtn(
+          icon: Icons.remove_rounded,
+          onTap: value > 0 ? () => onChange(value - 1) : null,
         ),
-      ],
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text('$value',
+              style: TextStyle(
+                  color: color,
+                  fontSize: 36,
+                  fontWeight: FontWeight.w900,
+                  height: 1)),
+        ),
+        _stepBtn(
+          icon: Icons.add_rounded,
+          onTap: () => onChange(value + 1),
+        ),
+      ]),
+    ]);
+  }
+
+  Widget _stepBtn({required IconData icon, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedOpacity(
+        opacity: onTap == null ? 0.3 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: AppColors.divider,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: AppColors.textMain, size: 16),
+        ),
+      ),
     );
   }
 }
